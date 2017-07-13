@@ -29,8 +29,10 @@ module Server =
       let bindings =
         [ HttpBinding.createSimple Protocol.HTTP "0.0.0.0" 8080 ]
 
+      let logger = Suave.Logging.Targets.create Suave.Logging.Verbose [||]
+
       let webServerConfig =
-        { defaultConfig with bindings = bindings}
+        { defaultConfig with bindings = bindings; logger = logger}
 
       startWebServer webServerConfig app
 
