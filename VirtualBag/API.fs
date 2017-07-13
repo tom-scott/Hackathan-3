@@ -7,6 +7,11 @@ module API =
   open Suave.Successful
   open FSharp.Data
 
+  
+  [<Literal>]
+  let sampleFile = __SOURCE_DIRECTORY__ + "/sampleStockResponse.json"
+  type StockResponse = FSharp.Data.JsonProvider<sampleFile>
+
   let withStatusCode s status: WebPart =
     fun ctx -> { ctx with response = { ctx.response with status = status; content = Bytes s }} |> succeed
 
@@ -57,6 +62,25 @@ module API =
   let replaceItems (j:J) =
     let newItems = DataStore.getItems ()
     j |> transformRecordWithKey "bag" (transformRecordWithKey "items" (fun _ -> newItems))  
+
+  let getStockForVariants (variantIds:seq<int>) =
+    let variantIdsStr = variantIds |> Seq.map (sprintf "%d") |> String.concat ","
+    let url = sprintf "http://asos-prod-eun-pdt-catalogue-api.cloudapp.net/product/catalogue/V2/variants?variantIds=%s&Store=com" variantIdsStr
+    
+    let headers =
+      [
+        "Asos-Auth-Token", ""
+      ]
+
+    async {
+    let! response = Http.AsyncRequestString (url, headers=headers)
+    let variantData = StockResponse.Parse response
+    return
+      variantData
+      |> Seq.map (fun variant -> variant.VariantId, variant.IsInStock)
+      |> Map.ofSeq
+    }
+
 
   let addToBag =
     POST

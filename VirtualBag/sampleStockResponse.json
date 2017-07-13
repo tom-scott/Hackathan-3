@@ -1,0 +1,100 @@
+[
+    {
+        "variantId": 177630,
+        "productId": 177629,
+        "name": "ASOS Jersey Cuffed Trousers",
+        "brandId": 53,
+        "brandName": "ASOS",
+        "weight": 380,
+        "division": "Womenswear",
+        "divisionId": 7,
+        "categoryId": 3914,
+        "sku": "JWCTR177630",
+        "productCode": "JWCTR177629",
+        "price": {
+            "current": {
+                "value": 18,
+                "text": "£18.00"
+            },
+            "previous": {
+                "value": 20,
+                "text": "£20.00"
+            },
+            "rrp": {
+                "value": 0,
+                "text": "£0.00"
+            },
+            "xrp": {
+                "value": 18,
+                "text": "£18.00"
+            },
+            "currency": "GBP",
+            "isMarkedDown": true,
+            "isOutletPrice": false
+        },
+        "colour": "Black",
+        "size": "UK 6",
+        "images": [
+            {
+                "url": "images.asos-media.com/products/asos-jersey-cuffed-trousers/177629-1-black",
+                "type": "Standard1",
+                "colourCode": "BK1",
+                "colour": "Black",
+                "isPrimary": true
+            }
+        ],
+        "isLowInStock": false,
+        "isInStock": false,
+        "isAvailable": true,
+        "isReturnable": true
+    },
+    {
+        "variantId": 177631,
+        "productId": 177629,
+        "name": "ASOS Jersey Cuffed Trousers",
+        "brandId": 53,
+        "brandName": "ASOS",
+        "weight": 380,
+        "division": "Womenswear",
+        "divisionId": 7,
+        "categoryId": 3914,
+        "sku": "JWCTR177631",
+        "productCode": "JWCTR177629",
+        "price": {
+            "current": {
+                "value": 18,
+                "text": "£18.00"
+            },
+            "previous": {
+                "value": 20,
+                "text": "£20.00"
+            },
+            "rrp": {
+                "value": 0,
+                "text": "£0.00"
+            },
+            "xrp": {
+                "value": 18,
+                "text": "£18.00"
+            },
+            "currency": "GBP",
+            "isMarkedDown": true,
+            "isOutletPrice": false
+        },
+        "colour": "Black",
+        "size": "UK 8",
+        "images": [
+            {
+                "url": "images.asos-media.com/products/asos-jersey-cuffed-trousers/177629-1-black",
+                "type": "Standard1",
+                "colourCode": "BK1",
+                "colour": "Black",
+                "isPrimary": true
+            }
+        ],
+        "isLowInStock": false,
+        "isInStock": false,
+        "isAvailable": true,
+        "isReturnable": true
+    }
+]
