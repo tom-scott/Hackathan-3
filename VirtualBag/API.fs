@@ -96,7 +96,7 @@ module API =
         
           let responseWithVirtualBag = resultJson |> replaceItems
           
-          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+          return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
         }))
 
@@ -118,7 +118,7 @@ module API =
           let resultJson = J.Parse result                       
           let responseWithVirtualBag = resultJson |> replaceItems
           
-          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+          return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
         }))
 
@@ -142,11 +142,10 @@ module API =
           let resultJson = J.Parse result                       
           let responseWithVirtualBag = resultJson |> replaceItems
           
-          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+          return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
         }))
       
-
   let passThrough =
     fun (ctx:HttpContext) ->
       async {
@@ -155,8 +154,14 @@ module API =
       let realUri = "https://api.asos.com" + ctx.request.path
       let method = ctx.request.method.ToString()
 
-      let! result = H.AsyncRequestString(realUri, query=query, headers=headers, httpMethod=method, body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
-      return! withStatusCode (UTF8.bytes result) ctx.response.status ctx
+      let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=method, body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+      match response.StatusCode, response.Body with
+      | n, HttpResponseBody.Text result ->
+        let status : HttpStatus = { code = n; reason = "" }
+        return! withStatusCode (UTF8.bytes result) status ctx
+      | _ -> return failwith "Unexpected response (binary)"
+      
       }
 
 
