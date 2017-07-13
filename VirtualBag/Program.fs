@@ -118,6 +118,29 @@ let main argv =
         | _ -> return None
         }))
 
+  let getBag =
+    GET
+      >=> pathScan "/commerce/bag/v3/bags/%s" (fun bagId -> (fun ctx ->
+        async {
+        let realUri = "https://api.asos.com" + ctx.request.path        
+        let headers = getHeaders ctx
+        let query = getQueryString ctx
+
+        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
+        let json = J.Parse requestJson
+
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+        match response.StatusCode, response.Body with
+        | 200, HttpResponseBody.Text result ->
+          let resultJson = J.Parse result                       
+          let responseWithVirtualBag = resultJson |> replaceItems
+          
+          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+        | _ -> return None
+        }))
+      
+
   let passThrough =
     fun (ctx:HttpContext) ->
       async {
@@ -133,6 +156,7 @@ let main argv =
   let app =
     choose [
       addToBag
+      getBag
       GET >=> path "/hello" >=> Successful.OK "Hello World!"
       passThrough
       ]
