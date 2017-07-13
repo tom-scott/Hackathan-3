@@ -21,6 +21,13 @@ module DataStore =
   let update (variantId:int) (json:J) =
     data <- data.Add(variantId, json)
 
+  let getItems () =
+    data
+    |> Map.toSeq
+    |> Seq.map snd
+    |> Seq.toArray
+    |> J.Array
+
 [<EntryPoint>]
 let main argv = 
 
@@ -55,8 +62,19 @@ let main argv =
       record.TryGetProperty key
     | _ -> None
 
-  //let replaceItems (j:J) =
-    
+  let transformRecordWithKey (key:string) (f: J -> J) (record:J) =
+    match record with
+    | J.Record xs ->
+      let existing = xs |> Map.ofSeq
+      let item = existing.[key]
+      let newItem = f item
+      let updatedList = existing.Add(key, newItem)
+      J.Record (updatedList |> Map.toArray)
+    | _ -> failwith "Was expecting a record"
+
+  let replaceItems (j:J) =
+    let newItems = DataStore.getItems ()
+    j |> transformRecordWithKey "bag" (transformRecordWithKey "items" (fun _ -> newItems))
 
   let addToBag =
     POST
@@ -76,25 +94,28 @@ let main argv =
           | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
           | _ -> failwith "Unexpected input"
 
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
 
-        let! result = H.AsyncRequestString(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
-
-        let resultJson = J.Parse result
-
-        let item =
-          match resultJson with
-          | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) ->
+        match response.StatusCode, response.Body with
+        | 200, HttpResponseBody.Text result ->
+          let resultJson = J.Parse result
+        
+          let item =
+            match resultJson with
+            | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) ->
             items
             |> Seq.tryFind (fun x ->
             match x with
             | RecordContainingKey "variantId" (J.Number x) when int x = variantId -> true
             | _ -> false)
-          | _ -> failwith "Unexpected response from ASOS API"
-          |> Option.get
-
-        DataStore.update variantId item
+            | _ -> failwith "Unexpected response from ASOS API"
         
-        return! withStatusCode (UTF8.bytes result) ctx.response.status ctx
+          DataStore.update variantId item.Value
+        
+          let responseWithVirtualBag = resultJson |> replaceItems
+          
+          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+        | _ -> return None
         }))
 
   let passThrough =
@@ -111,7 +132,7 @@ let main argv =
 
   let app =
     choose [
-      //addToBag
+      addToBag
       GET >=> path "/hello" >=> Successful.OK "Hello World!"
       passThrough
       ]
