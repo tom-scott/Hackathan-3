@@ -49,11 +49,11 @@ module API =
       record.TryGetProperty key
     | _ -> None
 
-  let transformRecordWithKey (key:string) (f: J -> J) (record:J) =
+  let transformRecordWithKey (key:string) (f: Option<J> -> J) (record:J) =
     match record with
     | J.Record xs ->
       let existing = xs |> Map.ofSeq
-      let item = existing.[key]
+      let item = existing.TryFind key
       let newItem = f item
       let updatedList = existing.Add(key, newItem)
       J.Record (updatedList |> Map.toArray)
@@ -61,7 +61,31 @@ module API =
 
   let replaceItems (j:J) =
     let newItems = DataStore.getItems ()
-    j |> transformRecordWithKey "bag" (transformRecordWithKey "items" (fun _ -> newItems))  
+    j |> transformRecordWithKey "bag" (fun bag -> transformRecordWithKey "items" (fun _ -> newItems) bag.Value)  
+
+  let getBagUri bagId = sprintf "https://api.asos.com/commerce/bag/v3/bags/%s" bagId
+
+  let getRealBagContents bagId query headers =
+    let uri = getBagUri bagId
+    async {
+    let! realBagContentsStr =
+      H.AsyncRequestString(uri, query=query, headers=headers, httpMethod = "GET", silentHttpErrors=true)
+
+    let realBagContentsJson = J.Parse realBagContentsStr
+
+    let realItems =
+      match realBagContentsJson with
+      | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) -> items
+      | _ -> [||]
+      |> Seq.choose (fun json ->
+        match json with
+        | RecordContainingKey "id" (J.String bagItemId) -> Some(bagItemId, json)
+        | _ -> None)
+      |> Map.ofSeq
+
+    return realItems
+    }
+
 
   let getStockForVariants (variantIds:seq<int>) =
     let variantIdsStr = variantIds |> Seq.map (sprintf "%d") |> String.concat ","
@@ -79,6 +103,50 @@ module API =
       variantData
       |> Seq.map (fun variant -> variant.VariantId, variant.IsInStock)
       |> Map.ofSeq
+    }
+
+
+  let enrichWithStock (localItems:Map<string,JsonValue>) (realItems:Map<string,JsonValue>) (j:J) =
+    let possiblyOutOfStock = localItems - realItems
+
+    let variantIds =
+      possiblyOutOfStock
+      |> Map.toSeq
+      |> Seq.map (fun (k,v) ->
+        match v with
+        | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
+        | _ -> failwith "Invalid response, could not find variant id")
+
+    async {
+    let! stockLevels = getStockForVariants variantIds
+
+    let unknownItems =
+      possiblyOutOfStock
+      |> Map.toSeq
+      |> Seq.map (fun (k,v) ->
+        let variantId = 
+          match v with
+          | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
+          | _ -> failwith "Invalid response, could not find variant id"
+        let enriched = v |> transformRecordWithKey "IsInStock" (fun _ -> J.Boolean stockLevels.[variantId])
+        k, enriched)
+      |> Map.ofSeq
+
+    let updatedRealItems =
+      realItems
+      |> Map.toSeq
+      |> Seq.map (fun (k,v) ->
+        let enriched = v |> transformRecordWithKey "IsInStock" (fun _ -> J.Boolean true)
+        k, enriched)
+      |> Map.ofSeq  
+      
+    let combined =
+      let a = unknownItems |> Map.toSeq |> Seq.map snd
+      let b = updatedRealItems |> Map.toSeq |> Seq.map snd
+      Seq.append a b |> Seq.toArray
+
+    return 
+      j |> transformRecordWithKey "bag" (fun bag -> transformRecordWithKey "items" (fun _ -> J.Array combined) bag.Value)  
     }
 
 
@@ -123,8 +191,11 @@ module API =
             | _ -> failwith "Could not locate bag item id in json"
         
           DataStore.update bagItemId item
+
+          let! realItems = getRealBagContents bagId query headers
+          let localItems = DataStore.data
         
-          let responseWithVirtualBag = resultJson |> replaceItems
+          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -143,10 +214,13 @@ module API =
 
         let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
 
+        let! realItems = getRealBagContents bagId query headers
+        let localItems = DataStore.data
+
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
           let resultJson = J.Parse result                       
-          let responseWithVirtualBag = resultJson |> replaceItems
+          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -167,10 +241,13 @@ module API =
 
         DataStore.removeBagItem bagItemId
 
+        let! realItems = getRealBagContents bagId query headers
+        let localItems = DataStore.data
+
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
           let resultJson = J.Parse result                       
-          let responseWithVirtualBag = resultJson |> replaceItems
+          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -189,21 +266,8 @@ module API =
 
 
         // Get expired items by diffing our bag with the real one
-        let getBagUri = sprintf "https://api.asos.com/commerce/bag/v3/bags/%s" bagId
-        let! realBagContentsStr =
-          H.AsyncRequestString(getBagUri, query=query, headers=headers, httpMethod = "GET", silentHttpErrors=true)
-
-        let realBagContentsJson = J.Parse realBagContentsStr
-
-        let realItems =
-          match realBagContentsJson with
-          | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) -> items
-          | _ -> [||]
-          |> Seq.choose (fun json ->
-            match json with
-            | RecordContainingKey "id" (J.String bagItemId) -> Some(bagItemId, json)
-            | _ -> None)
-          |> Map.ofSeq
+        
+        let! realItems = getRealBagContents bagId headers query
                     
         let expiredItems = DataStore.data - realItems
         
@@ -224,7 +288,7 @@ module API =
                   "variantId", variantId
                 |]
            
-            let! response = H.AsyncRequest(getBagUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.TextRequest (addToBagJson.ToString()), silentHttpErrors=true)
+            let! response = H.AsyncRequest(getBagUri bagId, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.TextRequest (addToBagJson.ToString()), silentHttpErrors=true)
             return ()
             }
             )
