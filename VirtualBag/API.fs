@@ -69,7 +69,7 @@ module API =
     
     let headers =
       [
-        "Asos-Auth-Token", ""
+        "Asos-Auth-Token", System.Environment.GetEnvironmentVariable "AsosAuthToken"
       ]
 
     async {
