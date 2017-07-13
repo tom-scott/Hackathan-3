@@ -88,22 +88,24 @@ module API =
 
 
   let getStockForVariants (variantIds:seq<int>) =
-    let variantIdsStr = variantIds |> Seq.map (sprintf "%d") |> String.concat ","
-    let url = sprintf "http://asos-prod-eun-pdt-catalogue-api.cloudapp.net/product/catalogue/V2/variants?variantIds=%s&Store=com" variantIdsStr
+    if variantIds |> Seq.isEmpty
+      then async.Return Map.empty
+      else
+        let variantIdsStr = variantIds |> Seq.map (sprintf "%d") |> String.concat ","
+        let url = sprintf "http://asos-prod-eun-pdt-catalogue-api.cloudapp.net/product/catalogue/V2/variants?variantIds=%s&Store=com" variantIdsStr
     
-    let headers =
-      [
-        "Asos-Auth-Token", ""
-      ]
+        let headers =
+          [
+          ]
 
-    async {
-    let! response = Http.AsyncRequestString (url, headers=headers)
-    let variantData = StockResponse.Parse response
-    return
-      variantData
-      |> Seq.map (fun variant -> variant.VariantId, variant.IsInStock)
-      |> Map.ofSeq
-    }
+        async {
+        let! response = Http.AsyncRequestString (url, headers=headers)
+        let variantData = StockResponse.Parse response
+        return
+          variantData
+          |> Seq.map (fun variant -> variant.VariantId, variant.IsInStock)
+          |> Map.ofSeq
+        }
 
 
   let enrichWithStock (localItems:Map<string,JsonValue>) (realItems:Map<string,JsonValue>) (j:J) =
@@ -171,7 +173,7 @@ module API =
         let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
 
         match response.StatusCode, response.Body with
-        | 200, HttpResponseBody.Text result ->
+        | 201, HttpResponseBody.Text result ->
           let resultJson = J.Parse result
         
           let item =
@@ -195,7 +197,7 @@ module API =
           let! realItems = getRealBagContents bagId query headers
           let localItems = DataStore.data
         
-          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
+          let! responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -227,7 +229,7 @@ module API =
         let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
 
         match response.StatusCode, response.Body with
-        | 200, HttpResponseBody.Text result ->
+        | 201, HttpResponseBody.Text result ->
           let resultJson = J.Parse result
         
           let items =
@@ -252,7 +254,7 @@ module API =
           let! realItems = getRealBagContents bagId query headers
           let localItems = DataStore.data
         
-          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
+          let! responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -278,7 +280,7 @@ module API =
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
           let resultJson = J.Parse result                       
-          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
+          let! responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
@@ -305,7 +307,7 @@ module API =
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
           let resultJson = J.Parse result                       
-          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
+          let! responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
