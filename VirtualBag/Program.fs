@@ -16,10 +16,13 @@ Multiple quantities (what happens if bag expires but user then adds same item ag
 
 module DataStore =
   
-  let mutable private data = Map.empty<int,J>
+  let mutable private data = Map.empty<string,J>
 
-  let update (variantId:int) (json:J) =
-    data <- data.Add(variantId, json)
+  let update (bagItemId:string) (json:J) =
+    data <- data.Add(bagItemId, json)
+
+  let removeBagItem (bagItemId:string) =
+    data <- data.Remove bagItemId
 
   let getItems () =
     data
@@ -94,7 +97,7 @@ let main argv =
           | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
           | _ -> failwith "Unexpected input"
 
-        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
 
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
@@ -103,14 +106,20 @@ let main argv =
           let item =
             match resultJson with
             | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) ->
-            items
-            |> Seq.tryFind (fun x ->
-            match x with
-            | RecordContainingKey "variantId" (J.Number x) when int x = variantId -> true
-            | _ -> false)
+              items
+              |> Seq.tryFind (fun x ->
+                match x with
+                | RecordContainingKey "variantId" (J.Number x) when int x = variantId -> true
+                | _ -> false)
+              |> Option.get
             | _ -> failwith "Unexpected response from ASOS API"
+
+          let bagItemId =
+            match item with
+            | RecordContainingKey "id" (J.String key) -> key
+            | _ -> failwith "Could not locate bag item id in json"
         
-          DataStore.update variantId item.Value
+          DataStore.update bagItemId item
         
           let responseWithVirtualBag = resultJson |> replaceItems
           
@@ -129,7 +138,31 @@ let main argv =
         let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
         let json = J.Parse requestJson
 
-        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+        match response.StatusCode, response.Body with
+        | 200, HttpResponseBody.Text result ->
+          let resultJson = J.Parse result                       
+          let responseWithVirtualBag = resultJson |> replaceItems
+          
+          return! withStatusCode (UTF8.bytes (responseWithVirtualBag.ToString())) ctx.response.status ctx
+        | _ -> return None
+        }))
+
+  let deleteFromBag =
+    DELETE
+      >=> pathScan "/commerce/bag/v3/bags/%s/product/%s" (fun (bagId, bagItemId) -> (fun ctx ->
+        async {
+        let realUri = "https://api.asos.com" + ctx.request.path        
+        let headers = getHeaders ctx
+        let query = getQueryString ctx
+
+        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
+        let json = J.Parse requestJson
+
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+        DataStore.removeBagItem bagItemId
 
         match response.StatusCode, response.Body with
         | 200, HttpResponseBody.Text result ->
@@ -157,6 +190,7 @@ let main argv =
     choose [
       addToBag
       getBag
+      deleteFromBag
       GET >=> path "/hello" >=> Successful.OK "Hello World!"
       passThrough
       ]
