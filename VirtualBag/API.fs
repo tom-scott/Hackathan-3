@@ -93,7 +93,7 @@ module API =
     
     let headers =
       [
-        "Asos-Auth-Token", System.Environment.GetEnvironmentVariable "AsosAuthToken"
+        "Asos-Auth-Token", ""
       ]
 
     async {
@@ -200,6 +200,64 @@ module API =
           return! OK (responseWithVirtualBag.ToString()) ctx
         | _ -> return None
         }))
+
+  let addMultipleToBag =
+    POST
+      >=> pathScan "/commerce/bag/v3/bags/%s/products" (fun bagId -> (fun ctx ->
+        async {
+        
+        let realUri = sprintf "%s%s/product" bagApiUrl bagId
+        
+        let headers = getHeaders ctx
+        let query = getQueryString ctx
+
+        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
+        let json = J.Parse requestJson
+
+        let variantIds =
+          match json with
+          | J.Array xs ->
+            xs |> Seq.map (fun x ->
+              match x with
+              | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
+              | _ -> failwith "Could not extract variantid")
+          | _ -> failwith "Unexpected input"
+          |> Set.ofSeq
+
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+        match response.StatusCode, response.Body with
+        | 200, HttpResponseBody.Text result ->
+          let resultJson = J.Parse result
+        
+          let items =
+            match resultJson with
+            | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) ->
+              items
+              |> Seq.filter (fun x ->
+                match x with
+                | RecordContainingKey "variantId" (J.Number x) when variantIds.Contains (int x) -> true
+                | _ -> false)
+            
+            | _ -> failwith "Unexpected response from ASOS API"
+
+          for item in items do
+            let bagItemId =
+              match item with
+              | RecordContainingKey "id" (J.String key) -> key
+              | _ -> failwith "Could not locate bag item id in json"
+        
+            DataStore.update bagItemId item
+
+          let! realItems = getRealBagContents bagId query headers
+          let localItems = DataStore.data
+        
+          let responseWithVirtualBag = resultJson |> replaceItems |> enrichWithStock localItems realItems
+          
+          return! OK (responseWithVirtualBag.ToString()) ctx
+        | _ -> return None
+        }))
+
 
   let getBag =
     GET

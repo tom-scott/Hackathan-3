@@ -19,6 +19,7 @@ module Server =
       let app =
         choose [
           API.addToBag
+          API.addMultipleToBag
           API.getBag
           API.deleteFromBag
           API.checkout
