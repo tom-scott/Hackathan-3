@@ -21,6 +21,7 @@ module Server =
           API.addToBag
           API.getBag
           API.deleteFromBag
+          API.checkout
           GET >=> path "/hello" >=> Successful.OK "Hello World!"
           API.passThrough
           ]

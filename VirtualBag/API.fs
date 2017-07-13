@@ -12,6 +12,12 @@ module API =
 
   let bagApiUrl = "https://api.asos.com/commerce/bag/v3/bags/"
 
+  let (-) (a:Map<'a,'b>) (b:Map<'a,'c>) : Map<'a,'b> = Map (seq {
+      for KeyValue(k, va) in a do
+          match Map.tryFind k b with
+          | Some vb -> ()
+          | None    -> yield k, (va) })
+
   let headersNotToPassOn =
     [|
       "content-length"
@@ -50,7 +56,7 @@ module API =
 
   let replaceItems (j:J) =
     let newItems = DataStore.getItems ()
-    j |> transformRecordWithKey "bag" (transformRecordWithKey "items" (fun _ -> newItems))
+    j |> transformRecordWithKey "bag" (transformRecordWithKey "items" (fun _ -> newItems))  
 
   let addToBag =
     POST
@@ -143,6 +149,73 @@ module API =
           let responseWithVirtualBag = resultJson |> replaceItems
           
           return! OK (responseWithVirtualBag.ToString()) ctx
+        | _ -> return None
+        }))
+
+  let checkout =
+    PUT
+      >=> pathScan "/commerce/bag/v3/bags/%s/checkout" (fun bagId -> (fun ctx ->
+        async {
+        let realUri = "https://api.asos.com" + ctx.request.path        
+        let headers = getHeaders ctx
+        let query = getQueryString ctx
+
+        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
+        let json = J.Parse requestJson
+
+
+        // Get expired items by diffing our bag with the real one
+        let getBagUri = sprintf "https://api.asos.com/commerce/bag/v3/bags/%s" bagId
+        let! realBagContentsStr =
+          H.AsyncRequestString(getBagUri, query=query, headers=headers, httpMethod = "GET", silentHttpErrors=true)
+
+        let realBagContentsJson = J.Parse realBagContentsStr
+
+        let realItems =
+          match realBagContentsJson with
+          | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) -> items
+          | _ -> [||]
+          |> Seq.choose (fun json ->
+            match json with
+            | RecordContainingKey "id" (J.String bagItemId) -> Some(bagItemId, json)
+            | _ -> None)
+          |> Map.ofSeq
+                    
+        let expiredItems = DataStore.data - realItems
+        
+        do!
+          expiredItems
+          |> Map.toArray
+          |> Array.map (fun (bagId, item) ->
+            async {
+            let variantId =
+              match item with
+              | RecordContainingKey "variantId" variantId ->  variantId
+              | _ -> failwith "Could not extract variant ID from response"
+            
+            let addToBagJson =
+              J.Record 
+                [|
+                  "bagId", J.String bagId
+                  "variantId", variantId
+                |]
+           
+            let! response = H.AsyncRequest(getBagUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.TextRequest (addToBagJson.ToString()), silentHttpErrors=true)
+            return ()
+            }
+            )
+         |> Async.Parallel
+         |> Async.Ignore
+         
+
+        // Now call the checkout api
+
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+
+        match response.StatusCode, response.Body with
+        | n, HttpResponseBody.Text result ->
+          let status : HttpStatus = { code = n; reason = "" }
+          return! withStatusCode (UTF8.bytes result) status ctx
         | _ -> return None
         }))
       

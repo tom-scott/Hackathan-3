@@ -1,7 +1,7 @@
 ﻿namespace VirtualBag
 module DataStore =
   
-  let mutable private data = Map.empty<string,J>
+  let mutable data = Map.empty<string,J>
 
   let update (bagItemId:string) (json:J) =
     data <- data.Add(bagItemId, json)
