@@ -1,0 +1,7 @@
+NUGET
+  remote: https://api.nuget.org/v3/index.json
+    FSharp.Core (4.0.0.1) - restriction: >= net452
+    FSharp.Data (2.3.3) - restriction: >= net452
+    Suave (2.1.1) - restriction: >= net452
+      FSharp.Core (>= 4.0.0.1) - restriction: < netstandard1.6
+    System.ValueTuple (4.3) - restriction: >= net452

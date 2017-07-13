@@ -1,0 +1,8 @@
+source https://proget.services.kingsway.asos.com/nuget/ASOS
+source http://nuget:8080/nuget/Assets
+source https://api.nuget.org/v3/index.json
+
+nuget FSharp.Core 4.0.0.1 restriction: >= net452
+nuget FSharp.Data 2.3.3 restriction: >= net452
+nuget Suave 2.1.1 restriction: >= net452
+nuget System.ValueTuple 4.3.0 restriction: >= net452
