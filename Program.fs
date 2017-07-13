@@ -5,6 +5,7 @@ open Suave.Successful
 open FSharp.Data
 
 type H = FSharp.Data.Http
+type J = FSharp.Data.JsonValue
 
 [<EntryPoint>]
 let main argv = 
@@ -34,6 +35,12 @@ let main argv =
       "connection"
     |] |> Set.ofArray
 
+  let (|RecordContainingKey|_|) (key:string) (json:J) =
+    match json with
+    | J.Record _ as record ->
+      record.TryGetProperty key
+    | _ -> None
+
   let addToBag =
     POST
       >=> pathScan "/commerce/bag/v3/bags/%s/product" (fun bagId -> (fun ctx ->
@@ -45,11 +52,17 @@ let main argv =
           ctx.request.headers
           |> Seq.filter (fun (k,_) -> headersNotToPassOn.Contains (k.ToLower()) = false)
           |> Seq.toList
-
-
           
         let body = ctx.request
-        let foo = headers |> Seq.toArray
+
+        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
+
+        let json = J.Parse requestJson
+
+        let variantId =
+          match json with
+          | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
+          | _ -> failwith "Unexpected input"
 
         let query =
           ctx.request.query
@@ -59,22 +72,24 @@ let main argv =
             | None -> None)
           |> Seq.toList
 
-
         let! result = H.AsyncRequestString(realUri, query=query, headers=headers, httpMethod="POST", body = HttpRequestBody.BinaryUpload ctx.request.rawForm)
 
+        let resultJson = J.Parse result
+
+        let item =
+          match resultJson with
+          | RecordContainingKey "bag" (RecordContainingKey "items" (J.Array items)) ->
+            items
+            |> Seq.tryFind (fun x ->
+            match x with
+            | RecordContainingKey "variantId" (J.Number x) when int x = variantId -> true
+            | _ -> false)
+          | _ -> failwith "Unexpected response from ASOS API"
+          |> Option.get
+        
         return! OK result ctx
         }))
-      //>=> (fun ctx ->
-      //  1
-      //  )
-        
-      //  let realUri = sprintf "%s%s/product" bagApiUrl bagId
 
-
-
-        
-      //  OK (sprintf "THis is bag %s" bagId)
-      //  )
 
   let app =
     choose [
