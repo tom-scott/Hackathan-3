@@ -55,6 +55,9 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Globals.fs" />
+    <Compile Include="DataStore.fs" />
+    <Compile Include="API.fs" />
     <Compile Include="Program.fs" />
     <None Include="App.config" />
     <Content Include="paket.references" />
