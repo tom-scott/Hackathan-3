@@ -96,6 +96,7 @@ module API =
     
         let headers =
           [
+            
           ]
 
         async {
@@ -269,10 +270,7 @@ module API =
         let headers = getHeaders ctx
         let query = getQueryString ctx
 
-        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
-        let json = J.Parse requestJson
-
-        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), silentHttpErrors=true)
 
         let! realItems = getRealBagContents bagId query headers
         let localItems = DataStore.data
@@ -375,7 +373,11 @@ module API =
       let realUri = "https://api.asos.com" + ctx.request.path
       let method = ctx.request.method.ToString()
 
-      let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=method, body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+      
+      let! response =
+        if method <> "GET"
+          then H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=method, body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+          else H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=method, silentHttpErrors=true)
 
       match response.StatusCode, response.Body with
       | n, HttpResponseBody.Text result ->
