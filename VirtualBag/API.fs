@@ -28,6 +28,7 @@ module API =
       "content-length"
       "host"
       "connection"
+      "proxy-connection"
     |] |> Set.ofArray
 
   let getHeaders (ctx:HttpContext) = 
@@ -96,7 +97,6 @@ module API =
     
         let headers =
           [
-            
           ]
 
         async {
@@ -131,7 +131,7 @@ module API =
           match v with
           | RecordContainingKey "variantId" (J.Number variantId) -> int variantId
           | _ -> failwith "Invalid response, could not find variant id"
-        let enriched = v |> transformRecordWithKey "IsInStock" (fun _ -> J.Boolean stockLevels.[variantId])
+        let enriched = v |> transformRecordWithKey "isInStock" (fun _ -> J.Boolean stockLevels.[variantId])
         k, enriched)
       |> Map.ofSeq
 
@@ -139,7 +139,7 @@ module API =
       realItems
       |> Map.toSeq
       |> Seq.map (fun (k,v) ->
-        let enriched = v |> transformRecordWithKey "IsInStock" (fun _ -> J.Boolean true)
+        let enriched = v |> transformRecordWithKey "isInStock" (fun _ -> J.Boolean true)
         k, enriched)
       |> Map.ofSeq  
       
@@ -209,7 +209,7 @@ module API =
       >=> pathScan "/commerce/bag/v3/bags/%s/products" (fun bagId -> (fun ctx ->
         async {
         
-        let realUri = sprintf "%s%s/product" bagApiUrl bagId
+        let realUri = sprintf "%s%s/products" bagApiUrl bagId
         
         let headers = getHeaders ctx
         let query = getQueryString ctx
@@ -291,11 +291,8 @@ module API =
         let realUri = "https://api.asos.com" + ctx.request.path        
         let headers = getHeaders ctx
         let query = getQueryString ctx
-
-        let requestJson = System.Text.Encoding.UTF8.GetString(ctx.request.rawForm)
-        let json = J.Parse requestJson
-
-        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), body = HttpRequestBody.BinaryUpload ctx.request.rawForm, silentHttpErrors=true)
+        
+        let! response = H.AsyncRequest(realUri, query=query, headers=headers, httpMethod=ctx.request.method.ToString(), silentHttpErrors=true)
 
         DataStore.removeBagItem bagItemId
 
